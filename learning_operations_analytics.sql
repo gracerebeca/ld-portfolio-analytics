@@ -1,119 +1,268 @@
-# Learning Operations Analytics Dashboard
+-- =====================================================
+-- Learning Operations Analytics Project
+-- Author: Grace Rebeca Verghese
+-- Tools: PostgreSQL, DBeaver, Tableau
+-- =====================================================
 
-## Project Overview
+-- NOTE:
+-- Run CREATE DATABASE from the default postgres database.
+-- Then connect to ld_portfolio_analytics before running the rest.
 
-This project is an end-to-end Learning & Development analytics microproject built to simulate how an HR/L&D reporting team could analyze learning request demand, consultant workload, delivery cycle time, and stakeholder satisfaction.
+-- =====================================================
+-- 1. DATABASE SETUP
+-- =====================================================
 
-The project uses synthetic L&D portfolio data and demonstrates a simple analytics workflow from raw data ingestion to SQL-based transformation, dimensional modeling, business analysis, and Tableau dashboarding.
+CREATE DATABASE ld_portfolio_analytics;
 
-## Tools Used
+-- Connect to ld_portfolio_analytics before continuing.
 
-- PostgreSQL
-- DBeaver
-- SQL
-- Tableau
+CREATE SCHEMA raw;
+CREATE SCHEMA staging;
+CREATE SCHEMA analytics;
 
-## Business Problem
+-- =====================================================
+-- 2. RAW TABLE CREATION
+-- =====================================================
 
-Learning & Development teams often receive a high volume of requests from multiple business units, but leadership may lack visibility into:
+CREATE TABLE raw.raw_business_units (
+    business_unit_id INTEGER PRIMARY KEY,
+    business_unit_name VARCHAR(100)
+);
 
-- Which business units generate the most learning demand
-- Which consultants are carrying the highest active workload
-- Which request types take the longest to deliver
-- Whether delivery speed impacts stakeholder satisfaction
+CREATE TABLE raw.raw_ld_consultants (
+    consultant_id INTEGER PRIMARY KEY,
+    consultant_name VARCHAR(100),
+    specialty VARCHAR(100)
+);
 
-This project models those questions using a synthetic L&D request portfolio.
+CREATE TABLE raw.raw_learning_requests (
+    request_id INTEGER PRIMARY KEY,
+    title VARCHAR(200),
+    request_type VARCHAR(50),
+    priority VARCHAR(20),
+    business_unit_id INTEGER,
+    consultant_id INTEGER,
+    intake_date DATE,
+    target_launch_date DATE,
+    actual_launch_date DATE,
+    status VARCHAR(30)
+);
 
-## Data Model
+CREATE TABLE raw.raw_request_stage_history (
+    stage_history_id INTEGER PRIMARY KEY,
+    request_id INTEGER,
+    stage_name VARCHAR(50),
+    stage_start_date DATE,
+    stage_end_date DATE
+);
 
-The project follows a simple raw-staging-analytics structure.
+CREATE TABLE raw.raw_stakeholder_feedback (
+    feedback_id INTEGER PRIMARY KEY,
+    request_id INTEGER,
+    satisfaction_rating NUMERIC(3,2),
+    revision_count INTEGER
+);
 
-### Raw Layer
+-- =====================================================
+-- 3. RAW DATA PROFILING
+-- =====================================================
 
-Raw source-style tables loaded from CSV files:
+SELECT DISTINCT priority
+FROM raw.raw_learning_requests
+ORDER BY priority;
 
-- `raw.raw_business_units`
-- `raw.raw_ld_consultants`
-- `raw.raw_learning_requests`
-- `raw.raw_request_stage_history`
-- `raw.raw_stakeholder_feedback`
+SELECT DISTINCT status
+FROM raw.raw_learning_requests
+ORDER BY status;
 
-### Staging Layer
+SELECT DISTINCT request_type
+FROM raw.raw_learning_requests
+ORDER BY request_type;
 
-Cleaned and standardized table:
+-- =====================================================
+-- 4. STAGING TRANSFORMATION
+-- Standardize priority, status, and request type values
+-- =====================================================
 
-- `staging.stg_learning_requests`
+DROP TABLE IF EXISTS staging.stg_learning_requests;
 
-This layer standardizes inconsistent values for:
+CREATE TABLE staging.stg_learning_requests AS
+SELECT
+    request_id,
+    title,
 
-- Priority
-- Status
-- Request Type
+    CASE
+        WHEN request_type IN ('E Learning', 'E-Learning', 'Elearning', 'eLearning')
+            THEN 'E-Learning'
+        WHEN request_type IN ('ILT', 'Instructor Led', 'Instructor-Led Workshop', 'Workshop')
+            THEN 'Instructor-Led Workshop'
+        WHEN request_type IN ('Job Aid', 'JobAid', 'Reference Guide')
+            THEN 'Job Aid'
+        WHEN request_type IN ('Compliance Refresh', 'Compliance Update', 'Regulatory Update')
+            THEN 'Compliance Update'
+        WHEN request_type IN ('Leadership', 'Leadership Program', 'Manager Enablement')
+            THEN 'Leadership Program'
+        WHEN request_type IN ('Micro Learning', 'Microlearning', 'Quick Learn')
+            THEN 'Microlearning'
+        WHEN request_type IN ('Platform Training', 'System Training', 'Tool Training')
+            THEN 'System Training'
+        WHEN request_type IN ('Procedure Training', 'Process Training', 'SOP Training')
+            THEN 'Process Training'
+        ELSE request_type
+    END AS request_type,
 
-### Analytics Layer
+    CASE
+        WHEN priority IN ('HIGH', 'High', 'high', 'H')
+            THEN 'High'
+        WHEN priority IN ('MED', 'Med', 'Medium', 'medium')
+            THEN 'Medium'
+        WHEN priority IN ('LOW', 'Low', 'low', 'L')
+            THEN 'Low'
+        WHEN priority IN ('CRIT', 'Critical', 'critical', 'Urgent')
+            THEN 'Critical'
+        ELSE priority
+    END AS priority,
 
-Reporting-ready fact and dimension tables:
+    business_unit_id,
+    consultant_id,
+    intake_date,
+    target_launch_date,
+    actual_launch_date,
 
-- `analytics.fact_learning_requests`
-- `analytics.dim_business_units`
-- `analytics.dim_consultants`
+    CASE
+        WHEN status IN ('Active', 'active', 'In Progress', 'in-progress')
+            THEN 'Active'
+        WHEN status IN ('Completed', 'complete', 'Closed', 'Done')
+            THEN 'Completed'
+        WHEN status IN ('Cancelled', 'Canceled', 'cancelled', 'Dropped')
+            THEN 'Cancelled'
+        WHEN status IN ('On Hold', 'on hold', 'HOLD', 'Paused')
+            THEN 'On Hold'
+        ELSE status
+    END AS status
 
-## Key SQL Concepts Demonstrated
+FROM raw.raw_learning_requests;
 
-- Database and schema creation
-- Raw data loading
-- Data profiling
-- Data standardization using `CASE`
-- Fact and dimension modeling
-- Joins
-- Aggregations
-- KPI calculations
-- Business analysis queries
+-- =====================================================
+-- 5. STAGING VALIDATION
+-- =====================================================
 
-## Key Metrics
+SELECT DISTINCT priority
+FROM staging.stg_learning_requests
+ORDER BY priority;
 
-The dashboard analyzes:
+SELECT DISTINCT status
+FROM staging.stg_learning_requests
+ORDER BY status;
 
-- Total Requests
-- Completed Requests
-- Average Cycle Time
-- Average Stakeholder Satisfaction
-- Requests by Business Unit
-- Active Requests by Consultant
-- Average Cycle Time by Request Type
-- Average Satisfaction by Request Type
+SELECT DISTINCT request_type
+FROM staging.stg_learning_requests
+ORDER BY request_type;
 
-## Dashboard Overview
+-- =====================================================
+-- 6. ANALYTICS MODEL
+-- Fact and dimension tables
+-- =====================================================
 
-The Tableau dashboard is structured around four business questions:
+DROP TABLE IF EXISTS analytics.fact_learning_requests;
 
-1. **Demand:** Which business units generate the most L&D requests?
-2. **Capacity:** Which consultants are carrying the most active workload?
-3. **Performance:** Which request types take the longest to deliver?
-4. **Outcomes:** Which request types have the highest stakeholder satisfaction?
+CREATE TABLE analytics.fact_learning_requests AS
+SELECT
+    request_id,
+    business_unit_id,
+    consultant_id,
+    request_type,
+    priority,
+    status,
+    intake_date,
+    target_launch_date,
+    actual_launch_date,
 
-## Key Insights
+    CASE
+        WHEN actual_launch_date IS NOT NULL
+            THEN actual_launch_date - intake_date
+        ELSE NULL
+    END AS cycle_time_days
 
-- Retail Banking generated the highest learning request demand.
-- Consultant workload varied across the L&D team, with some consultants carrying significantly more active requests.
-- Leadership Programs had the longest average delivery cycle time.
-- Critical requests moved through the portfolio faster than lower-priority requests and had higher average satisfaction scores.
-- Stakeholder satisfaction remained relatively strong across request types, suggesting that longer delivery timelines do not necessarily imply lower satisfaction.
+FROM staging.stg_learning_requests;
 
-## What I Learned
+DROP TABLE IF EXISTS analytics.dim_business_units;
 
-This project helped me strengthen my understanding of:
+CREATE TABLE analytics.dim_business_units AS
+SELECT
+    business_unit_id,
+    business_unit_name
+FROM raw.raw_business_units;
 
-- SQL fundamentals
-- ETL and ELT-style workflows
-- Data quality and business rule definition
-- Fact and dimension tables
-- Star schema concepts
-- BI dashboard design
-- Translating operational data into business insights
+DROP TABLE IF EXISTS analytics.dim_consultants;
 
-## AI and Analytics Reflection
+CREATE TABLE analytics.dim_consultants AS
+SELECT
+    consultant_id,
+    consultant_name,
+    specialty
+FROM raw.raw_ld_consultants;
 
-While AI can now generate SQL, dashboards, and technical scripts quickly, this project reinforced that human value remains in understanding the business problem, defining the right metrics, validating the data, interpreting results, and translating insights into action.
+-- =====================================================
+-- 7. BUSINESS ANALYSIS QUERIES
+-- =====================================================
 
-In this project, the most important decisions were not just technical. They involved defining business rules, choosing meaningful KPIs, structuring the model, and interpreting what the numbers meant for L&D operations.
+-- Request demand by business unit
+SELECT
+    b.business_unit_name,
+    COUNT(*) AS request_count
+FROM analytics.fact_learning_requests r
+INNER JOIN analytics.dim_business_units b
+    ON r.business_unit_id = b.business_unit_id
+GROUP BY b.business_unit_name
+ORDER BY request_count DESC;
+
+-- Active workload by consultant
+SELECT
+    c.consultant_name,
+    COUNT(*) AS active_requests
+FROM analytics.fact_learning_requests r
+INNER JOIN analytics.dim_consultants c
+    ON r.consultant_id = c.consultant_id
+WHERE r.status = 'Active'
+GROUP BY c.consultant_name
+ORDER BY active_requests DESC;
+
+-- Average cycle time by request type
+SELECT
+    request_type,
+    ROUND(AVG(cycle_time_days), 1) AS avg_cycle_time_days
+FROM analytics.fact_learning_requests
+WHERE status = 'Completed'
+GROUP BY request_type
+ORDER BY avg_cycle_time_days DESC;
+
+-- Average cycle time by priority
+SELECT
+    priority,
+    ROUND(AVG(cycle_time_days), 1) AS avg_cycle_time_days
+FROM analytics.fact_learning_requests
+WHERE status = 'Completed'
+GROUP BY priority
+ORDER BY avg_cycle_time_days DESC;
+
+-- Average satisfaction by request type
+SELECT
+    r.request_type,
+    ROUND(AVG(f.satisfaction_rating), 2) AS avg_satisfaction
+FROM analytics.fact_learning_requests r
+INNER JOIN raw.raw_stakeholder_feedback f
+    ON r.request_id = f.request_id
+GROUP BY r.request_type
+ORDER BY avg_satisfaction DESC;
+
+-- Priority, cycle time, and satisfaction
+SELECT
+    r.priority,
+    ROUND(AVG(r.cycle_time_days), 1) AS avg_cycle_time_days,
+    ROUND(AVG(f.satisfaction_rating), 2) AS avg_satisfaction
+FROM analytics.fact_learning_requests r
+INNER JOIN raw.raw_stakeholder_feedback f
+    ON r.request_id = f.request_id
+GROUP BY r.priority
+ORDER BY avg_cycle_time_days DESC;
